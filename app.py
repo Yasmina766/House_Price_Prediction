@@ -1,7 +1,9 @@
 import streamlit as st
-import pickle as pkl
-import numpy as np
 import pandas as pd
+import numpy as np
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import train_test_split
 import os
 
 st.set_page_config(page_title="House Price Prediction", page_icon="🏠", layout="centered")
@@ -9,68 +11,92 @@ st.set_page_config(page_title="House Price Prediction", page_icon="🏠", layout
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 @st.cache_resource
-def load_model():
-    model = pkl.load(open(os.path.join(BASE_DIR, "model", "house_price_model.pkl"), "rb"))
-    scaler = pkl.load(open(os.path.join(BASE_DIR, "model", "scaler.pkl"), "rb"))
-    return model, scaler
+def train_model():
+    dataset = pd.read_excel(os.path.join(BASE_DIR, "HousePricePrediction.xlsx"))
+    dataset.drop(['Id'], axis=1, inplace=True)
+    dataset['SalePrice'] = dataset['SalePrice'].fillna(dataset['SalePrice'].mean())
+    new_dataset = dataset.dropna()
 
-model, scaler = load_model()
+    object_cols = [col for col in new_dataset.columns
+                   if new_dataset[col].dtype == 'object' or new_dataset[col].dtype.name == 'str']
 
-st.title("🏠 House Sale Price Prediction")
-st.markdown("Edit the key property details below:")
+    encoder = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
+    OH_arr = encoder.fit_transform(new_dataset[object_cols])
+    OH_cols = pd.DataFrame(OH_arr, index=new_dataset.index, columns=encoder.get_feature_names_out())
+    df_final = new_dataset.drop(object_cols, axis=1)
+    df_final = pd.concat([df_final, OH_cols], axis=1)
 
-st.subheader("📍 Location")
+    X = df_final.drop(['SalePrice'], axis=1)
+    Y = df_final['SalePrice']
+
+    X_train, X_valid, Y_train, Y_valid = train_test_split(
+        X, Y, train_size=0.8, test_size=0.2, random_state=0)
+
+    model = LinearRegression()
+    model.fit(X_train, Y_train)
+
+    return model, encoder, list(X.columns), object_cols
+
+model, encoder, feature_cols, object_cols = train_model()
+
+st.title("🏠 House Price Prediction")
+st.markdown("Fill in the property details below to get an estimated sale price.")
+
+st.subheader("🏗️ Building Info")
 col1, col2 = st.columns(2)
 with col1:
-    longitude = st.slider("Longitude", -124.0, -114.0, -119.0, step=0.01)
+    MSSubClass = st.selectbox("Building Class (MSSubClass)",
+        [20, 30, 40, 45, 50, 60, 70, 75, 80, 85, 90, 120, 150, 160, 180, 190])
+    BldgType = st.selectbox("Building Type",
+        ['1Fam', '2fmCon', 'Duplex', 'Twnhs', 'TwnhsE'])
 with col2:
-    latitude = st.slider("Latitude", 32.0, 42.0, 36.0, step=0.01)
+    MSZoning = st.selectbox("Zoning Classification",
+        ['RL', 'RM', 'FV', 'RH', 'C (all)'])
+    OverallCond = st.slider("Overall Condition (1-9)", 1, 9, 5)
 
-ocean_proximity = st.selectbox(
-    "Ocean Proximity",
-    ["INLAND", "NEAR BAY", "NEAR OCEAN", "<1H OCEAN", "ISLAND"]
-)
-
-st.subheader("🏡 Property Details")
+st.subheader("📐 Lot Details")
 col3, col4 = st.columns(2)
 with col3:
-    housing_median_age = st.slider("Housing Median Age (years)", 1, 52, 25)
-    total_rooms = st.number_input("Total Rooms", min_value=100, max_value=10000, value=2000, step=50)
+    LotArea = st.number_input("Lot Area (sq ft)", min_value=1300, max_value=215245, value=8450, step=100)
 with col4:
-    total_bedrooms = st.number_input("Total Bedrooms", min_value=50, max_value=3000, value=400, step=10)
-    households = st.number_input("Households", min_value=50, max_value=5000, value=500, step=10)
+    LotConfig = st.selectbox("Lot Configuration",
+        ['Inside', 'Corner', 'CulDSac', 'FR2', 'FR3'])
 
-st.subheader("👥 Population & Income")
+st.subheader("🏚️ Exterior & Basement")
 col5, col6 = st.columns(2)
 with col5:
-    population = st.number_input("Population", min_value=100, max_value=20000, value=1200, step=100)
+    Exterior1st = st.selectbox("Exterior Material",
+        ['VinylSd', 'HdBoard', 'MetalSd', 'Wd Sdng', 'Plywood',
+         'BrkFace', 'CemntBd', 'AsbShng', 'Stucco', 'WdShing',
+         'BrkComm', 'AsphShn', 'Stone', 'ImStucc', 'CBlock'])
+    TotalBsmtSF = st.number_input("Total Basement Area (sq ft)", min_value=0, max_value=6110, value=856, step=10)
 with col6:
-    median_income = st.slider("Median Income (tens of $1000)", 0.5, 15.0, 4.0, step=0.1)
+    BsmtFinSF2 = st.number_input("Finished Basement Type 2 (sq ft)", min_value=0, max_value=1526, value=0, step=10)
+
+st.subheader("📅 Year Info")
+col7, col8 = st.columns(2)
+with col7:
+    YearBuilt = st.number_input("Year Built", min_value=1872, max_value=2010, value=2003, step=1)
+with col8:
+    YearRemodAdd = st.number_input("Year Remodeled", min_value=1950, max_value=2010, value=2003, step=1)
 
 if st.button("🔮 Predict Sale Price", use_container_width=True):
-    ocean_cols = {
-        "INLAND":     [0, 0, 0, 0, 1],
-        "NEAR BAY":   [0, 0, 1, 0, 0],
-        "NEAR OCEAN": [0, 1, 0, 0, 0],
-        "<1H OCEAN":  [1, 0, 0, 0, 0],
-        "ISLAND":     [0, 0, 0, 1, 0],
-    }
-    ocean_encoded = ocean_cols[ocean_proximity]
+    input_num = pd.DataFrame([[
+        MSSubClass, LotArea, OverallCond, YearBuilt, YearRemodAdd, float(BsmtFinSF2), float(TotalBsmtSF)
+    ]], columns=['MSSubClass', 'LotArea', 'OverallCond', 'YearBuilt', 'YearRemodAdd', 'BsmtFinSF2', 'TotalBsmtSF'])
 
-    features = np.array([[
-        longitude,
-        latitude,
-        housing_median_age,
-        total_rooms,
-        total_bedrooms,
-        population,
-        households,
-        median_income,
-        *ocean_encoded
-    ]])
+    input_cat = pd.DataFrame([[MSZoning, LotConfig, BldgType, Exterior1st]],
+                              columns=object_cols)
 
-    features_scaled = scaler.transform(features)
-    prediction = model.predict(features_scaled)[0]
+    OH_input = pd.DataFrame(encoder.transform(input_cat),
+                             columns=encoder.get_feature_names_out())
+
+    input_final = pd.concat([input_num.reset_index(drop=True),
+                              OH_input.reset_index(drop=True)], axis=1)
+    input_final = input_final.reindex(columns=feature_cols, fill_value=0)
+
+    prediction = model.predict(input_final)[0]
+    prediction = max(0, prediction)
 
     st.success(f"💰 Estimated Sale Price: **${prediction:,.0f}**")
-    st.caption("Prediction powered by XGBoost · R² = 84%")
+    st.caption("Powered by Linear Regression · trained on HousePricePrediction.xlsx")

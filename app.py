@@ -2,13 +2,16 @@ import streamlit as st
 import pickle as pkl
 import numpy as np
 import pandas as pd
+import os
 
 st.set_page_config(page_title="House Price Prediction", page_icon="🏠", layout="centered")
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 @st.cache_resource
 def load_model():
-    model = pkl.load(open("model/house_price_model.pkl", "rb"))
-    scaler = pkl.load(open("model/scaler.pkl", "rb"))
+    model = pkl.load(open(os.path.join(BASE_DIR, "model", "house_price_model.pkl"), "rb"))
+    scaler = pkl.load(open(os.path.join(BASE_DIR, "model", "scaler.pkl"), "rb"))
     return model, scaler
 
 model, scaler = load_model()
@@ -46,11 +49,11 @@ with col6:
 
 if st.button("🔮 Predict Sale Price", use_container_width=True):
     ocean_cols = {
-        "INLAND": [0, 0, 0, 0, 1],
-        "NEAR BAY": [0, 0, 1, 0, 0],
+        "INLAND":     [0, 0, 0, 0, 1],
+        "NEAR BAY":   [0, 0, 1, 0, 0],
         "NEAR OCEAN": [0, 1, 0, 0, 0],
-        "<1H OCEAN": [1, 0, 0, 0, 0],
-        "ISLAND": [0, 0, 0, 1, 0],
+        "<1H OCEAN":  [1, 0, 0, 0, 0],
+        "ISLAND":     [0, 0, 0, 1, 0],
     }
     ocean_encoded = ocean_cols[ocean_proximity]
 
